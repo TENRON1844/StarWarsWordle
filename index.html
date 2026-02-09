@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StarWordle — Daily Star Wars Wordle</title>
+  <style>
+    :root{
+      --bg:#05060a;
+      --text:#e9eefc;
+      --muted:#9aa6c3;
+      --shadow: 0 12px 30px rgba(0,0,0,.45);
+      --radius: 18px;
+      --tile: 58px;
+      --gap: 10px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:var(--font);
+      background:
+        radial-gradient(1000px 600px at 70% -10%, rgba(80,120,255,.18), transparent 70%),
+        radial-gradient(900px 600px at 10% 0%, rgba(255,210,120,.10), transparent 60%),
+        radial-gradient(700px 500px at 60% 110%, rgba(120,255,200,.10), transparent 60%),
+        var(--bg);
+      color:var(--text);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    }
+    .stars{
+      position:fixed; inset:0; pointer-events:none; opacity:.8;
+      background-image:
+        radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,.7) 40%, transparent 41%),
+        radial-gradient(1px 1px at 25% 80%, rgba(255,255,255,.6) 40%, transparent 41%),
+        radial-gradient(1px 1px at 80% 30%, rgba(255,255,255,.6) 40%, transparent 41%),
+        radial-gradient(1px 1px at 55% 55%, rgba(255,255,255,.5) 40%, transparent 41%),
+        radial-gradient(1px 1px at 75% 75%, rgba(255,255,255,.6) 40%, transparent 41%),
+        radial-gradient(1px 1px at 40% 35%, rgba(255,255,255,.45) 40%, transparent 41%),
+        radial-gradient(1px 1px at 92% 62%, rgba(255,255,255,.5) 40%, transparent 41%);
+      background-size: 500px 500px, 560px 560px, 610px 610px, 430px 430px, 700px 700px, 480px 480px, 520px 520px;
+      animation: drift 22s linear infinite;
+    }
+    @keyframes drift { from { transform: translate3d(0,0,0)} to { transform: translate3d(-30px, 20px, 0)} }
+
+    .app{
+      width:min(980px, 100%);
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap:18px;
+      align-items:start;
+    }
+    @media (max-width: 900px){
+      .app{grid-template-columns:1fr}
+    }
+    .card{
+      background: linear-gradient(180deg, rgba(10,14,28,.92), rgba(7,10,20,.92));
+      border:1px solid rgba(70,98,190,.25);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    header{
+      padding:18px 18px 10px;
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      border-bottom:1px solid rgba(70,98,190,.20);
+    }
+    .title{display:flex; flex-direction:column; gap:2px;}
+    .title h1{margin:0; font-size:20px; letter-spacing:.6px;}
+    .title p{margin:0; color:var(--muted); font-size:13px;}
+    .chipbar{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end}
+    .chip{
+      font-size:12px;
+      color:var(--text);
+      background: rgba(90,120,255,.10);
+      border:1px solid rgba(90,120,255,.20);
+      padding:8px 10px;
+      border-radius:999px;
+      cursor:pointer;
+      user-select:none;
+      transition:.15s transform, .15s background;
+    }
+    .chip:hover{transform: translateY(-1px); background: rgba(90,120,255,.14)}
+    .chip:active{transform: translateY(0px) scale(.99)}
+
+    .main{padding:18px; display:flex; flex-direction:column; gap:14px; align-items:center;}
+    .grid{
+      display:grid;
+      grid-template-rows: repeat(6, var(--tile));
+      gap: var(--gap);
+      width: calc(5 * var(--tile) + 4 * var(--gap));
+      max-width: 100%;
+      justify-content:center;
+    }
+    .row{display:grid; grid-template-columns: repeat(5, var(--tile)); gap: var(--gap);}
+    .tile{
+      width: var(--tile); height: var(--tile);
+      border-radius: 14px;
+      border: 1px solid rgba(120,150,255,.22);
+      background: rgba(15,20,42,.45);
+      display:flex; align-items:center; justify-content:center;
+      font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; font-size: 22px;
+      box-shadow: 0 10px 22px rgba(0,0,0,.25);
+      transform-style:preserve-3d;
+    }
+    .tile.filled{background: rgba(20,28,60,.55)}
+    .tile.reveal{animation: flip .55s ease forwards;}
+    @keyframes flip{0%{transform: rotateX(0deg)}45%{transform: rotateX(90deg)}100%{transform: rotateX(0deg)}}
+    .state-good{background: rgba(73,209,125,.18) !important; border-color: rgba(73,209,125,.55) !important}
+    .state-mid{background: rgba(242,193,78,.16) !important; border-color: rgba(242,193,78,.55) !important}
+    .state-bad{background: rgba(55,65,110,.28) !important; border-color: rgba(90,100,170,.30) !important}
+
+    .kbd{width:min(560px, 100%); display:flex; flex-direction:column; gap:10px; margin-top:6px;}
+    .kbd-row{display:flex; gap:8px; justify-content:center; flex-wrap:nowrap;}
+    .key{
+      flex: 1 1 auto; min-width: 28px;
+      padding: 12px 10px;
+      border-radius: 14px;
+      border:1px solid rgba(120,150,255,.18);
+      background: rgba(12,16,34,.75);
+      color:var(--text);
+      font-weight: 700;
+      letter-spacing:.03em;
+      cursor:pointer;
+      user-select:none;
+      text-align:center;
+      transition: .12s transform, .12s background, .12s border;
+    }
+    .key.small{flex: 1.6 1 auto}
+    .key:hover{transform: translateY(-1px); border-color: rgba(120,150,255,.28)}
+    .key:active{transform: translateY(0px) scale(.99)}
+    .key.good{background: rgba(73,209,125,.20); border-color: rgba(73,209,125,.50)}
+    .key.mid{background: rgba(242,193,78,.18); border-color: rgba(242,193,78,.50)}
+    .key.bad{background: rgba(55,65,110,.38); border-color: rgba(90,100,170,.25); color: rgba(233,238,252,.85)}
+    .status{
+      width:100%;
+      display:flex; justify-content:center;
+      color:var(--muted);
+      font-family: var(--mono);
+      font-size: 13px;
+      min-height: 18px;
+      text-align:center;
+      padding: 0 6px;
+    }
+
+    .side{padding:18px; display:flex; flex-direction:column; gap:14px;}
+    .panel{
+      background: rgba(10,14,28,.55);
+      border:1px solid rgba(70,98,190,.18);
+      border-radius: 18px;
+      padding:14px;
+    }
+    .panel h2{margin:0 0 8px; font-size:14px; letter-spacing:.06em; text-transform:uppercase; color: rgba(233,238,252,.92);}
+    .hint{color: rgba(233,238,252,.90); line-height:1.45; font-size: 14px;}
+    .hint small{color:var(--muted); display:block; margin-top:8px}
+    .stats{display:grid; grid-template-columns: repeat(3, 1fr); gap:10px;}
+    .stat{
+      background: rgba(12,16,34,.65);
+      border:1px solid rgba(70,98,190,.18);
+      border-radius: 16px;
+      padding:12px;
+      text-align:center;
+    }
+    .stat .num{font-weight:900; font-size:18px}
+    .stat .lab{font-size:11px; color:var(--muted); margin-top:4px; letter-spacing:.04em; text-transform:uppercase}
+    .footer{color:rgba(154,166,195,.9); font-size:12px; line-height:1.4;}
+    .footer code{font-family:var(--mono); color:rgba(233,238,252,.92)}
+    .toast{
+      position: fixed;
+      bottom: 18px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(8,10,18,.92);
+      border: 1px solid rgba(90,120,255,.25);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 999px;
+      box-shadow: var(--shadow);
+      font-size: 13px;
+      opacity: 0;
+      pointer-events:none;
+      transition: .2s opacity, .2s transform;
+      z-index: 50;
+    }
+    .toast.show{opacity:1; transform: translateX(-50%) translateY(-4px)}
+    .modal-back{position:fixed; inset:0; background: rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; padding:18px; z-index: 60;}
+    .modal-back.show{display:flex}
+    .modal{
+      width:min(560px, 100%);
+      background: linear-gradient(180deg, rgba(10,14,28,.96), rgba(7,10,20,.96));
+      border:1px solid rgba(90,120,255,.22);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding:16px;
+    }
+    .modal h3{margin:0 0 8px}
+    .modal p{margin:0 0 12px; color:rgba(233,238,252,.92); line-height:1.5}
+    .modal .actions{display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap}
+    .btn{
+      background: rgba(90,120,255,.15);
+      border:1px solid rgba(90,120,255,.25);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius: 14px;
+      cursor:pointer;
+      font-weight: 700;
+    }
+    .btn:hover{background: rgba(90,120,255,.20)}
+    .btn.primary{background: rgba(73,209,125,.16); border-color: rgba(73,209,125,.32);}
+    .btn.primary:hover{background: rgba(73,209,125,.22)}
+    .btn.danger{background: rgba(255,120,120,.14); border-color: rgba(255,120,120,.28);}
+    .btn.danger:hover{background: rgba(255,120,120,.18)}
+    .input{
+      width:100%;
+      padding:10px 12px;
+      border-radius: 14px;
+      border:1px solid rgba(90,120,255,.20);
+      background: rgba(12,16,34,.65);
+      color: var(--text);
+      font-family: var(--mono);
+      outline: none;
+    }
+    .muted{color:var(--muted); font-size:12px; line-height:1.4}
+    .row2{display:grid; grid-template-columns: 1fr 1fr; gap:10px}
+    @media (max-width: 520px){ .row2{grid-template-columns:1fr} }
+
+    /* Mini dev access button */
+    .dev-fab{
+      position: fixed;
+      right: 14px;
+      bottom: 14px;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      user-select:none;
+      background: rgba(90,120,255,.14);
+      border: 1px solid rgba(90,120,255,.24);
+      box-shadow: var(--shadow);
+      z-index: 55;
+      opacity: .85;
+    }
+    .dev-fab:hover{opacity:1; transform: translateY(-1px)}
+    .dev-fab span{font-family:var(--mono); font-weight:900; letter-spacing:.02em; font-size:14px}
+  </style>
+</head>
+<body>
+  <div class="stars"></div>
+
+  <div class="app">
+    <div class="card">
+      <header>
+        <div class="title">
+          <h1>StarWordle</h1>
+          <p>Daily Star Wars Wordle — one puzzle per day</p>
+        </div>
+        <div class="chipbar">
+          <div class="chip" id="btnHint">Hint</div>
+          <div class="chip" id="btnHow">How to play</div>
+        </div>
+      </header>
+
+      <div class="main">
+        <div class="grid" id="grid" aria-label="word grid"></div>
+        <div class="status" id="status"></div>
+        <div class="kbd" id="kbd" aria-label="keyboard"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="side">
+        <div class="panel">
+          <h2>Hint</h2>
+          <div class="hint" id="hintBox">Press <b>Hint</b> for a clue. (Hard, but not a riddle.)</div>
+        </div>
+
+        <div class="panel">
+          <h2>Stats</h2>
+          <div class="stats">
+            <div class="stat"><div class="num" id="stPlayed">0</div><div class="lab">Played</div></div>
+            <div class="stat"><div class="num" id="stWon">0</div><div class="lab">Won</div></div>
+            <div class="stat"><div class="num" id="stStreak">0</div><div class="lab">Streak</div></div>
+          </div>
+        </div>
+
+        <div class="panel footer">
+          <div><b>Daily rule:</b> You get one puzzle per day. If you finish it, you’ll need to come back tomorrow.</div>
+          <div style="margin-top:8px"><b>Guesses:</b> Any 5-letter guess is allowed so you can fish for letters.</div>
+          <div style="margin-top:8px"><b>Timezone:</b> The “day” is based on <code>Europe/Zurich</code>.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- How-to modal -->
+  <div class="modal-back" id="howBack" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3 id="howTitle">How to play</h3>
+      <p id="howText"></p>
+      <div class="actions">
+        <button class="btn" id="howClose">Close</button>
+        <button class="btn primary" id="howOk">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dev modal -->
+  <div class="modal-back" id="devBack" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3 id="devTitle">Dev Access</h3>
+      <div id="devBody"></div>
+      <div class="actions" id="devActions"></div>
+    </div>
+  </div>
+
+  <!-- Small dev access button (corner) -->
+  <div class="dev-fab" id="devFab" title="Dev access">
+    <span>DEV</span>
+  </div>
+
+<script>
+(() => {
+  // =============================
+  // IMPORTANT NOTE (client-side):
+  // This “dev code” gate is only a UI lock. Anyone who can view the page source could find the code.
+  // For real protection, you’d need a server-side check.
+  // =============================
+
+  // ======= Configure your private dev code here =======
+  // Change this to something only you know BEFORE you publish.
+  const DEV_CODE = "CHANGE-ME-1234"; // <-- edit me
+
+  const TIME_ZONE = "Europe/Zurich";
+  const STATE_KEY = "starwordle_state_v2";
+  const STATS_KEY = "starwordle_stats";
+  const DEV_KEY = "starwordle_dev_authed_v1";
+
+  // ======= Solution pool (Star Wars + broadly-known terms) =======
+  // 5 letters only. No “weird extras” to win—solution must match exactly, 5 letters.
+  // (You can add more 5-letter entries anytime.)
+  const SOLUTIONS = [
+    "FORCE","SABER","DROID","VADER","NABOO","EWOKS","HUTTS","SITHS","JEDIS","BOSSK","REBEL",
+    "CLONE","KYBER","CANTO","HOLOC",
+    "PADME","MAULS","LEIAH","YODAS","ENDOR","TATOO",
+    "PLOKO".replace("O","O") // harmless no-op placeholder to keep formatting (ignored below)
+  ].filter(w => /^[A-Z]{5}$/.test(w)).filter((v,i,a)=>a.indexOf(v)===i);
+
+  // ======= Guessing rules =======
+  // User request: allow regular words too “for the sake of trying to get letters”.
+  // So: accept ANY 5-letter A–Z guess (no dictionary needed).
+  // This implies thousands+ of possible guesses.
+  function isValidGuess(guess){
+    return /^[A-Z]{5}$/.test(guess);
+  }
+
+  // ======= Hints (hard, not riddles; not niche) =======
+  // Two levels: press Hint twice to get a stronger clue.
+  // Keep these “fan knowledge” without deep-comic trivia.
+  const HINTS = {
+    FORCE: {a:"Jedi/Sith power source: the galaxy’s energy field.", b:"Iconic phrase: “May the ____ be with you.”"},
+    SABER: {a:"Weapon defined by a colored blade and a humming sound.", b:"It’s the second word in “light ____” (5 letters)."},
+    DROID: {a:"Mechanical character category (not organic).", b:"R2-D2 and C-3PO are examples."},
+    VADER: {a:"Main saga villain title tied to Anakin’s fall.", b:"Black armor + iconic breathing. Starts with V."},
+    NABOO: {a:"Padmé’s homeworld introduced in Episode I.", b:"Features Gungans and a lush, elegant capital."},
+    EWOKS: {a:"Small forest moon species that fights the Empire.", b:"They live on Endor. Plural."},
+    HUTTS: {a:"Underworld power players; Jabba’s species.", b:"Slug-like crime lords. Plural."},
+    SITHS: {a:"Dark Side order (plural).", b:"Opposite of Jedi (plural)."},
+    JEDIS: {a:"Light Side order (plural).", b:"Opposite of Sith (plural)."},
+    BOSSK: {a:"Reptilian bounty hunter from the classic era.", b:"Often grouped with Boba Fett’s bounty crew."},
+    REBEL: {a:"Anti-Empire fighter aligned with the Rebellion.", b:"Opposes the Empire. Starts with R."},
+    CLONE: {a:"Army created from one person’s genetic template.", b:"Directly tied to the Clone Wars."},
+    KYBER: {a:"Crystal used to power lightsabers.", b:"Also connected to the Death Star’s main beam."},
+    CANTO: {a:"Casino-city name shortened (Episode VIII).", b:"Canto Bight. Starts with C."},
+    HOLOC: {a:"Short for holocron: Force knowledge container.", b:"Think “data cube of Jedi/Sith secrets.”"},
+    PADME: {a:"Queen/Senator strongly tied to Naboo and Anakin.", b:"Her first name, 5 letters. Starts with P."},
+    MAULS: {a:"Horned Sith known for a double-bladed saber (plural form).", b:"Sounds like “malls” but darker."},
+    LEIAH: {a:"Princess/general: key leader of the Rebellion/Resistance (spelling variant).", b:"Starts with L; the name is LEIA but made 5 letters."},
+    YODAS: {a:"The wise green Jedi Master (plural/possessive style).", b:"Starts with Y; base name is YODA."},
+    ENDOR: {a:"Forest moon in Episode VI.", b:"Home of Ewoks. Starts with E."},
+    TATOO: {a:"Desert world name shortened to 5 letters.", b:"Think Tatooine, twin suns."},
+  };
+
+  // ======= Seeded RNG for daily puzzle =======
+  function xmur3(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    return function() {
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      return (h ^= h >>> 16) >>> 0;
+    };
+  }
+  function mulberry32(a) {
+    return function() {
+      let t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function pickWord(seedStr) {
+    const seed = xmur3(seedStr)();
+    const rand = mulberry32(seed);
+    return SOLUTIONS[Math.floor(rand() * SOLUTIONS.length)];
+  }
+
+  function todayKeyTZ(){
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: TIME_ZONE,
+      year: "numeric", month:"2-digit", day:"2-digit"
+    }).formatToParts(new Date());
+    const m = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    return `${m.year}-${m.month}-${m.day}`;
+  }
+
+  function nextMidnightMillisApprox(){
+    const now = new Date();
+    const key = todayKeyTZ();
+    const [Y,M,D] = key.split("-").map(Number);
+    const tomorrowUTC = new Date(Date.UTC(Y, M-1, D+1, 0,0,0));
+    return Math.max(0, tomorrowUTC.getTime() - now.getTime());
+  }
+
+  const MAX_ROWS = 6;
+  const COLS = 5;
+
+  let dateKey = todayKeyTZ();
+  let overrideDateKey = null; // dev-only
+  let overrideWord = null; // dev-only
+
+  let solution = pickWord("starwordle-" + dateKey);
+
+  let row = 0, col = 0;
+  let board = Array.from({length: MAX_ROWS}, () => Array(COLS).fill(""));
+  let tileStates = Array.from({length: MAX_ROWS}, () => Array(COLS).fill(null));
+  let keyStates = {};
+  let locked = false;
+  let finishedToday = false;
+  let hintLevel = 0;
+
+  const status = document.getElementById("status");
+  const grid = document.getElementById("grid");
+  const kbd = document.getElementById("kbd");
+  const hintBox = document.getElementById("hintBox");
+  const toast = document.getElementById("toast");
+
+  const stPlayed = document.getElementById("stPlayed");
+  const stWon = document.getElementById("stWon");
+  const stStreak = document.getElementById("stStreak");
+
+  function loadStats(){
+    const s = JSON.parse(localStorage.getItem(STATS_KEY) || "{}");
+    return {
+      played: Number(s.played || 0),
+      won: Number(s.won || 0),
+      streak: Number(s.streak || 0),
+      lastWin: !!s.lastWin
+    };
+  }
+  function saveStats(s){
+    localStorage.setItem(STATS_KEY, JSON.stringify(s));
+    stPlayed.textContent = s.played;
+    stWon.textContent = s.won;
+    stStreak.textContent = s.streak;
+  }
+
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=>toast.classList.remove("show"), 1400);
+  }
+  function setStatus(msg){ status.textContent = msg || ""; }
+
+  function buildGrid(){
+    grid.innerHTML = "";
+    for(let r=0;r<MAX_ROWS;r++){
+      const rowEl = document.createElement("div");
+      rowEl.className = "row";
+      rowEl.dataset.r = r;
+      for(let c=0;c<COLS;c++){
+        const t = document.createElement("div");
+        t.className = "tile";
+        t.dataset.r = r;
+        t.dataset.c = c;
+        t.textContent = "";
+        rowEl.appendChild(t);
+      }
+      grid.appendChild(rowEl);
+    }
+  }
+
+  function buildKeyboard(){
+    const rows = [
+      "QWERTYUIOP".split(""),
+      "ASDFGHJKL".split(""),
+      ["ENTER", ..."ZXCVBNM".split(""), "⌫"]
+    ];
+    kbd.innerHTML = "";
+    rows.forEach((letters) => {
+      const r = document.createElement("div");
+      r.className = "kbd-row";
+      letters.forEach(ch => {
+        const k = document.createElement("div");
+        k.className = "key";
+        if(ch === "ENTER" || ch === "⌫") k.classList.add("small");
+        k.textContent = ch;
+        k.dataset.key = ch;
+        k.addEventListener("click", () => onKey(ch));
+        r.appendChild(k);
+      });
+      kbd.appendChild(r);
+    });
+  }
+
+  function render(){
+    for(let r=0;r<MAX_ROWS;r++){
+      for(let c=0;c<COLS;c++){
+        const t = grid.querySelector(`.tile[data-r="${r}"][data-c="${c}"]`);
+        t.textContent = board[r][c];
+        t.classList.toggle("filled", !!board[r][c]);
+        t.classList.remove("state-good","state-mid","state-bad");
+        if(tileStates[r][c]) t.classList.add(`state-${tileStates[r][c]}`);
+      }
+    }
+  }
+
+  function paintKeyboard(){
+    [...kbd.querySelectorAll(".key")].forEach(k => k.classList.remove("good","mid","bad"));
+    for(const [letter, state] of Object.entries(keyStates)){
+      [...kbd.querySelectorAll(`.key[data-key="${letter}"]`)].forEach(k => k.classList.add(state));
+    }
+  }
+
+  function persistState(){
+    localStorage.setItem(STATE_KEY, JSON.stringify({
+      dateKey,
+      overrideDateKey,
+      overrideWord,
+      row, col, board, tileStates, keyStates, finishedToday, hintLevel
+    }));
+  }
+
+  function loadStateIfSameDay(){
+    const raw = localStorage.getItem(STATE_KEY);
+    if(!raw) return false;
+    try{
+      const s = JSON.parse(raw);
+
+      // If the saved date doesn't match today's date key, do not restore (new daily puzzle).
+      if(s.dateKey !== dateKey) return false;
+
+      // restore dev overrides if present (only matters to you)
+      overrideDateKey = s.overrideDateKey || null;
+      overrideWord = s.overrideWord || null;
+
+      row = s.row || 0;
+      col = s.col || 0;
+      board = s.board || board;
+      tileStates = s.tileStates || tileStates;
+      keyStates = s.keyStates || {};
+      finishedToday = !!s.finishedToday;
+      hintLevel = Number(s.hintLevel || 0);
+      return true;
+    }catch(_){ return false; }
+  }
+
+  function scoreGuess(guess, answer){
+    const res = Array(COLS).fill("bad");
+    const a = answer.split(""), g = guess.split("");
+    const usedA = Array(COLS).fill(false);
+    const usedG = Array(COLS).fill(false);
+
+    for(let i=0;i<COLS;i++){
+      if(g[i] === a[i]){
+        res[i] = "good"; usedA[i]=true; usedG[i]=true;
+      }
+    }
+    for(let i=0;i<COLS;i++){
+      if(usedG[i]) continue;
+      const ch = g[i];
+      let found = -1;
+      for(let j=0;j<COLS;j++){
+        if(!usedA[j] && a[j] === ch){ found=j; break; }
+      }
+      if(found !== -1){ res[i]="mid"; usedA[found]=true; }
+    }
+    return res;
+  }
+
+  function applyKeyColor(letter, state){
+    const rank = {bad:1, mid:2, good:3};
+    const current = keyStates[letter] || null;
+    if(current && rank[current] >= rank[state]) return;
+    keyStates[letter] = state;
+  }
+
+  async function revealRow(states){
+    const tiles = [...grid.querySelectorAll(`.tile[data-r="${row}"]`)];
+    for(let i=0;i<COLS;i++){
+      const t = tiles[i];
+      t.classList.add("reveal");
+      await new Promise(res => setTimeout(res, 55));
+      tileStates[row][i] = states[i];
+      t.classList.remove("state-good","state-mid","state-bad");
+      t.classList.add(`state-${states[i]}`);
+      await new Promise(res => setTimeout(res, 65));
+      t.classList.remove("reveal");
+    }
+  }
+
+  function endGame(win){
+    finishedToday = true;
+    locked = true;
+
+    const stats = loadStats();
+    stats.played += 1;
+    if(win){
+      stats.won += 1;
+      stats.streak = stats.lastWin ? (stats.streak + 1) : 1;
+      stats.lastWin = true;
+      saveStats(stats);
+      setStatus("Victory. Come back tomorrow for a new word.");
+    }else{
+      stats.streak = 0;
+      stats.lastWin = false;
+      saveStats(stats);
+      setStatus(`Out of tries. The word was ${solution}. New puzzle tomorrow.`);
+    }
+    persistState();
+  }
+
+  function lockWithCountdown(){
+    const ms = nextMidnightMillisApprox();
+    const h = Math.floor(ms/3600000);
+    const m = Math.floor((ms%3600000)/60000);
+    setStatus(`Daily puzzle complete. Next one in ~${h}h ${m}m (Zurich time).`);
+  }
+
+  function getGuess(){ return board[row].join(""); }
+
+  async function submit(){
+    if(locked) return;
+    const guess = getGuess();
+
+    // Only allow exactly 5 A–Z letters (no spaces, symbols, etc.)
+    if(!isValidGuess(guess)){
+      showToast("Use exactly 5 letters (A–Z).");
+      return;
+    }
+
+    locked = true;
+    const states = scoreGuess(guess, solution);
+
+    for(let i=0;i<COLS;i++) applyKeyColor(guess[i], states[i]);
+    paintKeyboard();
+
+    await revealRow(states);
+
+    // Win condition: EXACT match only (already guaranteed by strict 5 letters + equality).
+    if(guess === solution){ endGame(true); return; }
+
+    row += 1; col = 0;
+    locked = false;
+
+    if(row >= MAX_ROWS){ endGame(false); }
+    else { setStatus(""); persistState(); }
+  }
+
+  function backspace(){
+    if(locked) return;
+    if(col > 0){
+      col--;
+      board[row][col] = "";
+      render();
+      persistState();
+    }
+  }
+
+  function addLetter(ch){
+    if(locked) return;
+    if(col < COLS){
+      board[row][col] = ch;
+      col++;
+      render();
+      persistState();
+    }
+  }
+
+  function onKey(key){
+    if(finishedToday) return;
+    if(key === "ENTER") return submit();
+    if(key === "⌫") return backspace();
+    if(/^[A-Z]$/.test(key)) return addLetter(key);
+  }
+
+  function setHint(){
+    if(finishedToday){ showToast("See you tomorrow."); return; }
+    const h = HINTS[solution] || {a:"No hint for this word yet.", b:"Try common saga vocabulary."};
+    hintLevel = Math.min(2, hintLevel + 1);
+
+    // Make it “hard but fair”: if you have 2+ greens total anywhere, auto-upgrade.
+    const greens = tileStates.flat().filter(x => x === "good").length;
+    if(greens >= 2) hintLevel = 2;
+
+    if(hintLevel === 1){
+      hintBox.innerHTML = `${h.a}<small>Press Hint again for a stronger clue.</small>`;
+    } else {
+      hintBox.innerHTML = `${h.a}<small><b>Stronger clue:</b> ${h.b}</small>`;
+    }
+    persistState();
+  }
+
+  // ======= How-to modal =======
+  const howBack = document.getElementById("howBack");
+  const howClose = document.getElementById("howClose");
+  const howOk = document.getElementById("howOk");
+  const btnHow = document.getElementById("btnHow");
+  function showHow(){
+    document.getElementById("howText").innerHTML =
+      `Guess the <b>5-letter</b> Star Wars word in 6 tries.<br><br>
+       <b>Green</b> = right letter, right place.<br>
+       <b>Gold</b> = right letter, wrong place.<br>
+       <b>Blue</b> = not in the word.<br><br>
+       <b>Daily:</b> one puzzle per day (Europe/Zurich). If you finish, you wait for tomorrow.<br>
+       <b>Guesses:</b> any 5 letters are allowed, so you can test letters freely.`;
+    howBack.classList.add("show");
+  }
+  function closeHow(){ howBack.classList.remove("show"); }
+  howClose.addEventListener("click", closeHow);
+  howOk.addEventListener("click", closeHow);
+  howBack.addEventListener("click", (e)=>{ if(e.target === howBack) closeHow(); });
+  btnHow.addEventListener("click", showHow);
+
+  // ======= Dev access (mini panel) =======
+  const devFab = document.getElementById("devFab");
+  const devBack = document.getElementById("devBack");
+  const devBody = document.getElementById("devBody");
+  const devActions = document.getElementById("devActions");
+
+  function isDevAuthed(){
+    return localStorage.getItem(DEV_KEY) === "1";
+  }
+
+  function closeDev(){ devBack.classList.remove("show"); }
+
+  function openDev(){
+    devBack.classList.add("show");
+    renderDev();
+  }
+
+  function renderDev(){
+    devActions.innerHTML = "";
+    devBody.innerHTML = "";
+
+    if(!isDevAuthed()){
+      devBody.innerHTML = `
+        <p class="muted">
+          Enter your code to unlock dev controls on this device.<br>
+          <b>Note:</b> this is a UI gate only (client-side).
+        </p>
+        <input class="input" id="devCode" type="password" placeholder="Dev code" autocomplete="off" />
+      `;
+      const btn = document.createElement("button");
+      btn.className = "btn primary";
+      btn.textContent = "Unlock";
+      btn.onclick = () => {
+        const entered = (document.getElementById("devCode").value || "");
+        if(entered === DEV_CODE){
+          localStorage.setItem(DEV_KEY, "1");
+          showToast("Dev unlocked on this device.");
+          renderDev();
+        }else{
+          showToast("Wrong code.");
+        }
+      };
+      const btnClose = document.createElement("button");
+      btnClose.className = "btn";
+      btnClose.textContent = "Close";
+      btnClose.onclick = closeDev;
+
+      devActions.appendChild(btnClose);
+      devActions.appendChild(btn);
+      return;
+    }
+
+    const currentKey = overrideDateKey || dateKey;
+    const currentWord = overrideWord || solution;
+
+    devBody.innerHTML = `
+      <p class="muted">
+        <b>Dev mode</b> is enabled on this device.<br>
+        Current day key: <code>${currentKey}</code><br>
+        Current solution: <code>${currentWord}</code> (hidden in normal play)
+      </p>
+
+      <div class="row2" style="margin-top:10px">
+        <div>
+          <div class="muted" style="margin-bottom:6px">Set custom day key (YYYY-MM-DD)</div>
+          <input class="input" id="devDate" placeholder="e.g. 2026-02-09" value="${currentKey}" />
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px">Force word (5 letters A–Z)</div>
+          <input class="input" id="devWord" placeholder="e.g. SABER" value="${overrideWord || ""}" />
+        </div>
+      </div>
+
+      <div class="muted" style="margin-top:10px">
+        Tip: forcing a word is handy for testing hints and UI. For real daily play, keep it blank.
+      </div>
+    `;
+
+    const btnClose = document.createElement("button");
+    btnClose.className = "btn";
+    btnClose.textContent = "Close";
+    btnClose.onclick = closeDev;
+
+    const btnReveal = document.createElement("button");
+    btnReveal.className = "btn";
+    btnReveal.textContent = "Reveal word";
+    btnReveal.onclick = () => showToast("Word: " + (overrideWord || solution));
+
+    const btnApply = document.createElement("button");
+    btnApply.className = "btn primary";
+    btnApply.textContent = "Apply";
+    btnApply.onclick = () => {
+      const dk = (document.getElementById("devDate").value || "").trim();
+      const ww = (document.getElementById("devWord").value || "").trim().toUpperCase();
+
+      if(dk && !/^\d{4}-\d{2}-\d{2}$/.test(dk)){
+        showToast("Bad date format.");
+        return;
+      }
+      if(ww && !/^[A-Z]{5}$/.test(ww)){
+        showToast("Forced word must be 5 letters A–Z.");
+        return;
+      }
+      overrideDateKey = dk || null;
+      overrideWord = ww || null;
+
+      // Recompute solution based on overrides
+      const key = overrideDateKey || dateKey;
+      solution = overrideWord || pickWord("starwordle-" + key);
+
+      // Reset today's progress (dev action)
+      row = 0; col = 0;
+      board = Array.from({length: MAX_ROWS}, () => Array(COLS).fill(""));
+      tileStates = Array.from({length: MAX_ROWS}, () => Array(COLS).fill(null));
+      keyStates = {};
+      finishedToday = false;
+      locked = false;
+      hintLevel = 0;
+      hintBox.innerHTML = "Press <b>Hint</b> for a clue. (Hard, but not a riddle.)";
+      setStatus("Dev applied. Fresh board.");
+      render();
+      paintKeyboard();
+      persistState();
+      renderDev();
+      showToast("Applied.");
+    };
+
+    const btnReset = document.createElement("button");
+    btnReset.className = "btn danger";
+    btnReset.textContent = "Reset today";
+    btnReset.onclick = () => {
+      localStorage.removeItem(STATE_KEY);
+      showToast("Progress cleared.");
+      location.reload();
+    };
+
+    const btnLock = document.createElement("button");
+    btnLock.className = "btn";
+    btnLock.textContent = "Lock dev";
+    btnLock.onclick = () => {
+      localStorage.removeItem(DEV_KEY);
+      showToast("Dev locked.");
+      renderDev();
+    };
+
+    devActions.appendChild(btnClose);
+    devActions.appendChild(btnReveal);
+    devActions.appendChild(btnReset);
+    devActions.appendChild(btnLock);
+    devActions.appendChild(btnApply);
+  }
+
+  devFab.addEventListener("click", openDev);
+  devBack.addEventListener("click", (e)=>{ if(e.target === devBack) closeDev(); });
+
+  // ======= Init =======
+  function init(){
+    buildGrid();
+    buildKeyboard();
+    saveStats(loadStats());
+
+    // daily selection
+    dateKey = todayKeyTZ();
+    solution = pickWord("starwordle-" + dateKey);
+
+    // restore progress (same day only)
+    loadStateIfSameDay();
+
+    // apply overrides (dev-only) AFTER load
+    if(overrideDateKey || overrideWord){
+      const key = overrideDateKey || dateKey;
+      solution = overrideWord || pickWord("starwordle-" + key);
+    }
+
+    render();
+    paintKeyboard();
+
+    if(finishedToday) lockWithCountdown();
+    else if(board.some(r => r.some(ch => ch))) setStatus("Continuing today’s puzzle.");
+
+    document.getElementById("btnHint").addEventListener("click", setHint);
+
+    window.addEventListener("keydown", (e) => {
+      if(howBack.classList.contains("show") || devBack.classList.contains("show")) return;
+      if(e.key === "Enter") return onKey("ENTER");
+      if(e.key === "Backspace") return onKey("⌫");
+      const up = e.key.toUpperCase();
+      if(/^[A-Z]$/.test(up)) return onKey(up);
+    });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
